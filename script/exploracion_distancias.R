@@ -3,7 +3,7 @@ library(feather);library(sf)
 library(nngeo)
 # Carga datos -------------------------------------------------------------
 
-
+fs::dir_tree(recurse = 3)
 
 pob_manz = read_csv('data/input/chile/Poblacion_por_manzana_segun_Censo_2017_2C_Chile.csv') %>% 
   janitor::clean_names()
@@ -88,10 +88,11 @@ mas_cercanos = st_nearest_feature(manzanas_centroide,
 mas_cercanos2 = st_nn(manzanas_centroide, ee, k = 1, returnDist = T)
 nn_df =  do.call(cbind, mas_cercanos2) %>% as.data.frame %>%
   bind_cols(manzent = manzanas_centroide$manzent) %>%
-  mutate(nn = as.numeric(nn)) %>% 
-  left_join(ee %>% select(rbd, id_fila), by=c('nn' = 'id_fila'))
+  mutate(nn = as.numeric(nn),
+         dist = as.numeric(dist)) %>% 
+  left_join(ee %>% as.data.frame %>% select(rbd, id_fila), by=c('nn' = 'id_fila'))
 
-
+nn_df %>% writexl::write_xlsx('data/output/distancias_por_manzana.xlsx')
 manzanas %>% group_by(manzent_i) %>% filter(n()>1)
 
 names(distancias) = ee %>% filter(comuna == 'Santiago') %>% pull(rbd) 
