@@ -9,12 +9,25 @@ pob_manz = read_csv('data/input/chile/Poblacion_por_manzana_segun_Censo_2017_2C_
   janitor::clean_names()
 
 sf_use_s2(FALSE)
-manzanas = st_read('data/input/chile/shapes/Manzanas/pob_manzana_censo2017.shp') %>% 
+manzanas_malo = st_read('data/input/chile/shapes/Manzanas/pob_censo/pob_manzana_censo2017.shp') %>% 
   janitor::clean_names() %>% 
   mutate(nom_comuna = nom_comuna %>% str_to_title()) %>% 
   st_transform(crs = 3857)
 
+
+manzanas = st_read('data/input/chile/shapes/Manzanas/microdatos_manzana/Microdatos_Manzana.shp') %>% 
+  janitor::clean_names() %>% 
+  mutate(comuna = comuna %>% str_to_title()) %>% 
+  st_transform(crs = 3857)
+
 manzanas_centroide = manzanas %>% st_centroid
+
+entidades = st_read('data/input/chile/shapes/Manzanas/microdatos_entidad/Microdatos_Entidad.shp') %>% 
+  janitor::clean_names() %>% 
+  mutate(nom_comuna = nom_comuna %>% str_to_title()) %>% 
+  st_transform(crs = 3857)
+
+
 manzanas$manzent_i
 st_crs(manzanas_centroide)
 stgo = manzanas %>% filter(nom_comuna == 'SANTIAGO')
@@ -65,8 +78,6 @@ ee = read_csv2('data/input/educacion/Directorio-oficial-EE-2023/20230912_Directo
 #             by = c('cod_reg_rbd' = 'codregion'))
 
 
-
-manzanas_centroide %>% names
 # distancias --------------------------------------------------------------
 
 distancias = st_distance(manzanas_centroide %>% filter(nom_comuna == 'Santiago'),
@@ -75,6 +86,12 @@ manzanas_centroide %>% names
 mas_cercanos = st_nearest_feature(manzanas_centroide,
                            ee) %>% as.data.frame()
 mas_cercanos2 = st_nn(manzanas_centroide, ee, k = 1, returnDist = T)
+nn_df =  do.call(cbind, mas_cercanos2) %>% as.data.frame %>%
+  bind_cols(manzent = manzanas_centroide$manzent) %>%
+  mutate(nn = as.numeric(nn)) %>% 
+  left_join(ee %>% select(rbd, id_fila), by=c('nn' = 'id_fila'))
+
+
 manzanas %>% group_by(manzent_i) %>% filter(n()>1)
 
 names(distancias) = ee %>% filter(comuna == 'Santiago') %>% pull(rbd) 
