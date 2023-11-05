@@ -1,7 +1,85 @@
 library(tidyverse); library(ggplot2)
 library(arrow);library(sf)
 library(nngeo)
+
+
+
+# funciones ---------------------------------------------------------------
+filtrar_ee_por_rendimiento = function(indicadores, ee, filtro){
+  rbds_filtrados = indicadores %>%
+    filter(categoria_desempeno_2019_media %in% filtro |
+             categoria_desempeno_2019_basica %in% filtro)
+  
+  
+  ee_filtered = ee %>% inner_join(rbds_filtrados, by='rbd')
+  
+  
+}
+
+filtrar_ee_por_rendimiento2 = function(indicadores, ee){
+  rbds_filtrados = indicadores %>%
+  filter(quintil_mate4 == 1 |
+             quintil_lenguaje4 == 1)
+  
+  ee_filtered = ee %>% inner_join(rbds_filtrados, by='rbd')
+  
+  
+}
+
+
+
+
+obtener_mas_cercanos = function(territorio, ee, tipo_territorio = 'manzana'){
+  mas_cercanos = st_nn(territorio, ee, k = 1, returnDist = T)
+  
+  nn_df =  do.call(cbind, mas_cercanos) %>% as.data.frame %>%
+    {if(tipo_territorio == 'manzana') bind_cols(., manzent = manzanas_centroide$manzent) else
+      bind_cols(., id_ent = entidades_centroide$id_ent)} %>%
+    mutate(nn = as.numeric(nn),
+           dist = as.numeric(dist)) %>% 
+    left_join(ee %>% as.data.frame %>% select(rbd, id_fila), by=c('nn' = 'id_fila'))
+}
+
+plot_territorio = function(territorio, ee, 
+                           filtro = NULL, col_filtro = NULL,
+                           plot_centroide = T,
+                           plot_estab = T,
+                           size_ee = 2,
+                           col_fill = NULL) {
+  
+  
+  if(!is.null(filtro)){
+    territorio = territorio %>%
+      filter({{col_filtro}} %in% filtro)
+    
+    ee = ee %>% filter({{col_filtro}} %in% filtro)
+    
+    
+  }
+  
+  territorio_centroide = territorio %>% st_centroid()
+  
+  p = territorio %>% ggplot +
+    geom_sf(aes(fill = {{col_fill}}), lwd = 0)  +
+    scale_fill_continuous(high = "red", low = "green") +
+    #stat_sf_coordinates()+
+    {if(plot_centroide) geom_sf(data = territorio_centroide,
+                                color = 'red', size = 1, alpha = .3)}   +
+    {if(plot_estab) geom_sf(data = ee, color = 'blue', size = size_ee, alpha = .8)}
+  
+  ggsave('data/output/viz/prueba.png', width = 20, height = 20)
+  
+  print(p)
+  
+}
+
+
 # Carga datos -------------------------------------------------------------
+
+
+
+## Territoriales -----------------------------------------------------------
+
 
 fs::dir_tree(recurse = 3)
 
@@ -33,6 +111,9 @@ entidades_centroide = entidades %>% st_centroid
 codreg = entidades %>% distinct(region, cod_region)
 
 
+
+
+
 manzanas = st_read('data/input/chile/shapes/Manzanas/microdatos_manzana/Microdatos_Manzana.shp') %>% 
   janitor::clean_names() %>% 
   mutate(comuna = comuna %>% str_to_title()) %>% 
@@ -43,28 +124,17 @@ manzanas = st_read('data/input/chile/shapes/Manzanas/microdatos_manzana/Microdat
 
 manzanas_centroide = manzanas %>% st_centroid
 
-
-
-
-indicadores = arrow::read_feather('data/input/educacion/indicadores_colegios.feather') %>% 
-  filter(!is.na(categoria_desempeno_2019_basica) | !is.na(categoria_desempeno_2019_media))
-
-
-
-
-
-indicadores %>% select(matches('desempeno'))
 regiones = st_read('data/input/chile/shapes/Regiones/Regional.shp') %>% 
   janitor::clean_names()
 comunas = st_read('data/input/chile/shapes/Comunas/comunas.shp') %>% 
   janitor::clean_names()
 comunas_centroide = comunas %>% st_centroid
 
-# oriente = comunas %>% 
-#   filter(comuna %in% c('Las Condes', 'La Reina', 'Providencia', 'Ñuñoa', 'Vitacura'))
-# oriente_centroide = oriente %>% st_centroid()
 
+## Educación ---------------------------------------------------------------
 
+indicadores = arrow::read_feather('data/input/educacion/indicadores_colegios.feather') %>% 
+  filter(!is.na(categoria_desempeno_2019_basica) | !is.na(categoria_desempeno_2019_media))
 
 
 ee = read_csv2('data/input/educacion/Directorio-oficial-EE-2023/20230912_Directorio_Oficial_EE_2023_20230430_WEB.csv') %>% 
@@ -88,36 +158,12 @@ ee = read_csv2('data/input/educacion/Directorio-oficial-EE-2023/20230912_Directo
 ee_ind = ee %>% inner_join(indicadores, by='rbd')
 
 
-filtrar_ee = function(indicadores, ee, filtro){
-  rbds_filtrados = indicadores %>%
-    filter(categoria_desempeno_2019_media %in% filtro |
-             categoria_desempeno_2019_basica %in% filtro)
-  
-  
-  ee_filtered = ee %>% inner_join(rbds_filtrados, by='rbd')
-  
-  
-}
 
-
-ee_alto_rendimiento = filtrar_ee(indicadores, ee, 'ALTO')
-ee_bajo_rendimiento = filtrar_ee(indicadores, ee, 'INSUFICIENTE')
+ee_alto_rendimiento = filtrar_ee_por_rendimiento(indicadores, ee, 'ALTO')
+ee_alto_rendimiento = filtrar_ee_por_rendimiento2(indicadores, ee)
+ee_bajo_rendimiento = filtrar_ee_por_rendimiento(indicadores, ee, 'INSUFICIENTE')
 
 # distancias --------------------------------------------------------------
-
-
-
-obtener_mas_cercanos = function(territorio, ee, tipo_territorio = 'manzana'){
-  mas_cercanos = st_nn(territorio, ee, k = 1, returnDist = T)
-  
-  nn_df =  do.call(cbind, mas_cercanos) %>% as.data.frame %>%
-    {if(tipo_territorio == 'manzana') bind_cols(., manzent = manzanas_centroide$manzent) else
-      bind_cols(., id_ent = entidades_centroide$id_ent)} %>%
-    mutate(nn = as.numeric(nn),
-           dist = as.numeric(dist)) %>% 
-    left_join(ee %>% as.data.frame %>% select(rbd, id_fila), by=c('nn' = 'id_fila'))
-}
-
 
 mas_cercanos_manz = obtener_mas_cercanos(manzanas_centroide, ee)
 mas_cercanos_manz_alto_rend = obtener_mas_cercanos(manzanas_centroide, ee_alto_rendimiento)
@@ -126,51 +172,13 @@ mas_cercanos_manz_bajo_rend = obtener_mas_cercanos(manzanas_centroide, ee_bajo_r
 
 mas_cercanos_ent = obtener_mas_cercanos(entidades_centroide, ee, tipo_territorio = 'entidad')
 
-
-
-
 mas_cercanos_manz %>% writexl::write_xlsx('data/output/distancias_por_manzana.xlsx')
 mas_cercanos_manz_alto_rend %>% writexl::write_xlsx('data/output/distancias_por_manzana_alto_rendimiento.xlsx')
 
 mas_cercanos_ent %>% writexl::write_xlsx('data/output/distancias_por_entidad.xlsx')
 
 
-
-
-plot_territorio = function(territorio, ee, 
-                           filtro = NULL, col_filtro = NULL,
-                           plot_centroide = T,
-                           plot_estab = T,
-                           size_ee = 2,
-                           col_fill = NULL) {
-  
-  
-  if(!is.null(filtro)){
-    territorio = territorio %>%
-      filter({{col_filtro}} %in% filtro)
-    
-    ee = ee %>% filter({{col_filtro}} %in% filtro)
-    
-    
-  }
-  
-  territorio_centroide = territorio %>% st_centroid()
-
-  p = territorio %>% ggplot +
-    geom_sf(aes(fill = {{col_fill}}), lwd = 0)  +
-    scale_fill_continuous(high = "red", low = "green", trans = "log") +
-    #stat_sf_coordinates()+
-    {if(plot_centroide) geom_sf(data = territorio_centroide,
-                                color = 'red', size = 1, alpha = .3)}   +
-    {if(plot_estab) geom_sf(data = ee, color = 'blue', size = size_ee, alpha = .8)}
-  
-  ggsave('data/output/viz/prueba.png', width = 20, height = 20)
-  
-  print(p)
-  
-}
-
-
+full = manzanas %>% bind_rows(entidades)
 
 # 
 # ee$nom_com_rbd
@@ -180,14 +188,14 @@ manzanas_norm = manzanas %>% left_join(mas_cercanos_manz)
 manzanas_alto = manzanas %>% left_join(mas_cercanos_manz_alto_rend)
 manzanas_bajo = manzanas %>% left_join(mas_cercanos_manz_bajo_rend)
 
-
-
-plot_territorio(manzanas_bajo, ee_bajo_rendimiento, filtro = com_gran_stgo,
-                col_filtro = comuna,
+entidades %>% names
+plot_territorio(full, ee, 
+                filtro = 13,
+                col_filtro = cod_region,
                 plot_centroide = F,
                 size_ee = .05,
                 plot_estab = T,
-                col_fill = dist)
+                col_fill = total_pers)
 
 
 entidades_centroide  %>%  filter(cod_region == 5) %>% distinct(comuna, .keep_all = T) %>% view
